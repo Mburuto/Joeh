@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matches Scanner</title>
+<style>
+:root{--bg:#0e1614;--panel:#16221f;--line:#27403a;--tx:#e6efe9;--mut:#8aa59b;--acc:#f2b84b;--win:#5fd49a;--loss:#ef6b5b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:14px;max-width:760px;margin-inline:auto}
+h1{font-size:22px;margin:4px 0 2px}
+h2{font-size:15px;margin:0 0 8px}
+.sub{color:var(--mut);margin:0 0 14px;font-size:13px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+label.chip{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;font-size:13px}
+label.chip:has(input:checked){border-color:var(--acc);color:var(--acc)}
+input[type=checkbox]{accent-color:var(--acc)}
+input[type=number],input[type=password],select{background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:6px}
+input[type=number]{width:84px}
+input[type=password]{flex:1;min-width:150px}
+button{background:var(--acc);color:#1a1405;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px}
+button.alt{background:transparent;color:var(--tx);border:1px solid var(--line)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#status{font-size:13px;color:var(--mut)}
+#status.on{color:var(--win)}
+#bigp.sig{border-color:var(--acc);background:#2a2412}
+#bigp.sig #bign{color:var(--acc)}
+#scanl{font-size:17px;font-weight:700;color:var(--acc);margin-bottom:4px}
+#bign{font-size:68px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.bars{display:flex;gap:4px;align-items:flex-end;height:84px;margin-top:10px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;font-size:11px;color:var(--mut)}
+.bar i{display:block;width:100%;background:var(--line);border-radius:3px 3px 0 0}
+.bar.hot i{background:var(--acc)}
+.bar.hot span{color:var(--acc);font-weight:700}
+#verdict{font-weight:700;margin-top:6px}
+#log{max-height:280px;overflow:auto;font-size:13px}
+#log div{padding:5px 0;border-bottom:1px solid var(--line)}
+.w{color:var(--win)}.l{color:var(--loss)}.s{color:var(--acc)}
+.note{font-size:12px;color:var(--mut)}
+.warn{font-size:13px;color:var(--loss);margin:6px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;display:block;overflow-x:auto}
+td,th{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+summary{cursor:pointer}
+#realRow{display:none}
+</style>
+</head>
+<body>
+<h1>Matches Scanner</h1>
+<p class="sub">Ticks za moja kwa moja kutoka Deriv. Paper-trade inapima kila ishara, na auto-trade ni hiari.</p>
+
+<div class="panel">
+  <div class="row">
+    <label>Hali: <select id="mode"><option value="one">Soko moja</option><option value="rotate">Zungusha masoko (auto)</option></select></label>
+    <label id="oneWrap">Soko: <select id="one"></select></label>
+    <button id="go">Anza</button>
+  </div>
+  <details id="mkWrap"><summary class="note">Masoko ya kuzungusha (<span id="mkCount">10</span>)</summary>
+    <div class="row" id="markets" style="margin-top:8px"></div>
+  </details>
+  <details style="margin-top:6px"><summary class="note">Mipangilio ya ishara</summary>
+    <div class="row" style="margin-top:8px">
+      <label>Pengo (ticks): <input type="number" id="gap" value="60" min="10" max="99"></label>
+      <label>Subiri: <input type="number" id="cool" value="5" min="1" max="50"></label>
+      <label id="patWrap">Hamia baada ya ticks: <input type="number" id="pat" value="40" min="5" max="500"></label>
+      <button class="alt" id="reset">Futa matokeo</button>
+    </div>
+  </details>
+  <div id="status" style="margin-top:8px">Imesimama.</div>
+</div>
+
+<div class="panel" id="bigp">
+  <div id="scanl"></div>
+  <div class="note" id="bigm">Utabiri wa tick ijayo</div>
+  <div id="bign">-</div>
+  <div id="bigs">Bonyeza Anza.</div>
+  <div class="note" id="bigq"></div>
+  <div class="note" id="bigr"></div>
+  <div class="bars" id="bars"></div>
+  <div class="note">Nguzo = ticks zilizopita tangu kila digit ilipotoka mwisho. Njano (ndefu zaidi) ndiyo utabiri. Ikitoka, inayofuata kwenye foleni inachukua nafasi.</div>
+</div>
+
+<div class="panel">
+  <h2>Auto-trade</h2>
+  <div class="row">
+    <label>App ID: <input type="text" id="appid" placeholder="App ID" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:210px;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:6px"></label>
+    <input type="password" id="token" placeholder="Token (Read + Trade)" autocomplete="off">
+    <button id="link">Unganisha</button>
+  </div>
+  <div class="row"><label>Akaunti: <select id="atype"><option value="demo">DEMO</option><option value="real">REAL</option></select></label></div>
+  <div id="acct" class="note">Weka App ID yako kutoka developers.deriv.com na token. Anza na DEMO. Token haihifadhiwi popote, inaishi kwenye ukurasa huu tu.</div>
+  <details style="margin-top:10px"><summary class="note">Stake na vikomo vya hasara</summary>
+    <div class="row" style="margin-top:8px">
+      <label>Stake: <input type="number" id="stake" value="0.35" min="0.35" step="0.05"></label>
+      <label>Kikomo cha hasara/siku: <input type="number" id="lossLim" value="5" min="0.35" step="0.5"></label>
+      <label>Lengo la faida/siku: <input type="number" id="tpLim" value="5" min="0.35" step="0.5"></label>
+      <label>Hasara mfululizo: <input type="number" id="streakLim" value="30" min="1" max="200"></label>
+    </div>
+  </details>
+  <div class="row" id="realRow"><label class="chip"><input type="checkbox" id="real">Najua hii ni akaunti HALISI na naweza kupoteza pesa</label></div>
+  <div class="row" style="margin-top:8px"><label class="chip"><input type="checkbox" id="auto">Washa auto-trade</label></div>
+  <div id="liveStat" class="note">Leo: hakuna trade bado.</div>
+  <div class="warn" id="liveWarn"></div>
+</div>
+
+<div class="panel">
+  <table><thead><tr><th>Market</th><th>Ushindi</th><th>Jumla</th><th>Win rate</th><th>95% CI</th></tr></thead><tbody id="tbody"></tbody></table>
+  <div id="verdict">Bado hakuna data.</div>
+  <p class="note">Matches inahitaji zaidi ya 10.5% ili kuvunja sawa. Subiri ishara 300 au zaidi kabla ya kuamini namba yoyote. Ticks za Deriv ni nasibu, kwa hiyo tarajia karibu 10%.</p>
+</div>
+
+<div class="panel"><div id="log"></div></div>
+
+<script>
+const SYMS={"R_10":"Vol 10","R_25":"Vol 25","R_50":"Vol 50","R_75":"Vol 75","R_100":"Vol 100","1HZ10V":"V10 1s","1HZ25V":"V25 1s","1HZ50V":"V50 1s","1HZ75V":"V75 1s","1HZ100V":"V100 1s"};
+const API="https://api.derivws.com",PUB="wss://api.derivws.com/trading/v1/options/ws/public";
+const WINDOW=100,BREAKEVEN=10.5,KEY="matches-scanner-v1";
+const $=id=>document.getElementById(id);
+const num=(id,d)=>{const v=parseFloat($(id).value);return v>0?v:d};
+let ws=null,tw=null,twK=null,twId="",running=false,retry=null,token="",accts=[],auth=null,liveOpen=null,liveMeta=null,edgeOK=false,rid=1,active="",idle=0;
+const pend={},pipOf={};
+const S={};
+for(const s in SYMS)S[s]={h:[],seen:{},n:0,pending:null,cool:0,cand:null};
+let stats={};
+try{stats=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+for(const s in SYMS)if(!stats[s])stats[s]=[0,0];
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(stats))}catch(e){}};
+const today=()=>new Date().toISOString().slice(0,10);
+function loadLive(){try{const x=JSON.parse(localStorage.getItem(KEY+"-live")||"null");if(x&&x.date===today())return x}catch(e){}return{date:today(),pl:0,w:0,l:0,streak:0,trades:0}}
+let live=loadLive();
+const saveLive=()=>{try{localStorage.setItem(KEY+"-live",JSON.stringify(live))}catch(e){}};
+
+$("markets").innerHTML=Object.entries(SYMS).map(([k,v])=>`<label class="chip"><input type="checkbox" value="${k}" checked>${v}</label>`).join("");
+$("one").innerHTML=Object.entries(SYMS).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+$("one").value="1HZ75V";
+const pool=()=>[...document.querySelectorAll("#markets input:checked")].map(i=>i.value);
+const selected=()=>$("mode").value==="one"?[$("one").value]:pool();
+
+function wilson(w,n,z=1.96){if(!n)return[0,0];const p=w/n,d=1+z*z/n,c=p+z*z/(2*n),m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return[(c-m)/d*100,(c+m)/d*100]}
+function log(html){const d=document.createElement("div");d.innerHTML=`<span class="note">${new Date().toLocaleTimeString()}</span> ${html}`;$("log").prepend(d);while($("log").children.length>150)$("log").lastChild.remove()}
+function digitOf(q,pip){return +Number(q).toFixed(pip).slice(-1)}
+
+function renderLive(){
+  const cur=auth?auth.currency:"USD";
+  $("liveStat").innerHTML=live.trades?`Leo: trades ${live.trades} | W ${live.w} / L ${live.l} | hasara mfululizo ${live.streak} | P/L <b class="${live.pl>=0?'w':'l'}">${live.pl.toFixed(2)} ${cur}</b>`:"Leo: hakuna trade bado.";
+}
+function render(){
+  let tw_=0,tn=0,rows="";
+  for(const s in SYMS){const[w,n]=stats[s];tw_+=w;tn+=n;
+    if(n){const[lo,hi]=wilson(w,n);rows+=`<tr><td>${SYMS[s]}</td><td>${w}</td><td>${n}</td><td>${(w/n*100).toFixed(1)}%</td><td>${lo.toFixed(1)}-${hi.toFixed(1)}%</td></tr>`}}
+  edgeOK=false;
+  if(tn){const[lo,hi]=wilson(tw_,tn);rows+=`<tr><th>JUMLA</th><th>${tw_}</th><th>${tn}</th><th>${(tw_/tn*100).toFixed(1)}%</th><th>${lo.toFixed(1)}-${hi.toFixed(1)}%</th></tr>`;
+    const v=$("verdict");
+    if(tn<300){v.textContent=`Sampuli ndogo (${tn}/300). Usiamini matokeo bado.`;v.style.color="var(--mut)"}
+    else if(lo>BREAKEVEN){edgeOK=true;v.textContent="Kuna ushahidi wa edge. Thibitisha tena kwa sampuli mpya kabla ya pesa halisi.";v.style.color="var(--win)"}
+    else{v.textContent="Hakuna edge iliyothibitishwa. Usiweke pesa halisi.";v.style.color="var(--loss)"}}
+  $("tbody").innerHTML=rows;
+  $("liveWarn").textContent=edgeOK?"":"Onyo: paper-trade haijathibitisha edge. Auto-trade itapoteza pesa kihesabu kwa muda mrefu.";
+  renderLive();
+}
+
+/* ---------- Akaunti (REST) ---------- */
+const hdr=()=>({"Authorization":"Bearer "+token,"Deriv-App-ID":$("appid").value.trim()});
+function drawAcct(){
+  if(!auth){return}
+  $("acct").innerHTML=`${auth.id} <b class="${auth.is_virtual?'w':'l'}">${auth.is_virtual?"DEMO":"HALISI"}</b> | salio ${auth.balance.toFixed(2)} ${auth.currency}`;
+  $("realRow").style.display=auth.is_virtual?"none":"flex";
+}
+function pickAcct(){
+  const ty=$("atype").value,a=accts.find(x=>String(x.account_type||"").toLowerCase()===ty);
+  closeTrade();
+  if(!a){auth=null;$("realRow").style.display="none";$("acct").innerHTML=`<span class="l">Hakuna akaunti ya ${ty==="demo"?"DEMO":"REAL"} kwenye profile hii.</span>`;return}
+  auth={id:a.account_id||a.id||a.loginid,is_virtual:ty==="demo",currency:a.currency||"USD",balance:+a.balance||0};
+  drawAcct();renderLive();
+}
+async function connectAcct(){
+  if(!token||!$("appid").value.trim()){$("acct").textContent="Token na App ID vyote vinahitajika.";return}
+  $("acct").textContent="Inaunganisha na Deriv...";
+  try{
+    const r=await fetch(API+"/trading/v1/options/accounts",{headers:hdr()}),tx=await r.text();let j={};try{j=JSON.parse(tx)}catch(e){}
+    if(!r.ok){auth=null;const msg=(j.errors&&j.errors[0]&&j.errors[0].message)||tx.slice(0,80);$("acct").innerHTML=`<span class="l">Deriv imekataa (${r.status}): ${msg}.${/invalid app/i.test(msg)?" App ID si sahihi. Tumia App ID yako mwenyewe kutoka developers.deriv.com.":""}</span>`;return}
+    accts=Array.isArray(j.data)?j.data:((j.data&&j.data.accounts)||[]);
+    pickAcct();if(auth)log(`Akaunti ${auth.id} imeunganishwa (${auth.is_virtual?"DEMO":"HALISI"})`);
+  }catch(e){auth=null;$("acct").innerHTML=`<span class="l">Kivinjari kimeshindwa kufikia Deriv: ${e.message}</span>`}
+}
+
+/* ---------- Trading WS (OTP) ---------- */
+function closeTrade(){clearInterval(twK);if(tw){tw.onclose=null;try{tw.close()}catch(e){}}tw=null;twId=""}
+function treq(m){return new Promise(res=>{const id=rid++;m.req_id=id;pend[id]=res;
+  try{tw.send(JSON.stringify(m))}catch(e){delete pend[id];return res({error:{message:"Muunganisho umekatika"}})}
+  setTimeout(()=>{if(pend[id]){delete pend[id];res({error:{message:"Timeout"}})}},15000)})}
+function twMsg(e){
+  const m=JSON.parse(e.data);
+  if(m.req_id&&pend[m.req_id]){const f=pend[m.req_id];delete pend[m.req_id];f(m);return}
+  if(m.msg_type==="proposal_open_contract"){const c=m.proposal_open_contract;
+    if(c&&c.is_sold&&c.contract_id===liveOpen){finishContract(c);if(m.subscription)try{tw.send(JSON.stringify({forget:m.subscription.id}))}catch(e){}}}
+}
+async function tconnect(){
+  if(!auth)return false;
+  if(tw&&tw.readyState===1&&twId===auth.id)return true;
+  try{
+    const o=await fetch(API+"/trading/v1/options/accounts/"+auth.id+"/otp",{method:"POST",headers:hdr()}),j=await o.json().catch(()=>({}));
+    if(!o.ok||!j.data||!j.data.url){log(`<span class="l">Session ya trading imeshindwa (${o.status})</span>`);return false}
+    closeTrade();
+    await new Promise((res,rej)=>{tw=new WebSocket(j.data.url);tw.onopen=res;tw.onerror=rej;setTimeout(rej,10000)});
+    const me=tw;tw.onmessage=twMsg;
+    tw.onclose=()=>{if(tw!==me)return;tw=null;if(liveOpen){log('<span class="l">Muunganisho wa trading umekatika. Angalia matokeo kwenye Deriv.</span>');liveOpen=null}};
+    twId=auth.id;clearInterval(twK);twK=setInterval(()=>{try{tw&&tw.readyState===1&&tw.send(JSON.stringify({ping:1}))}catch(e){}},20000);
+    return true;
+  }catch(e){log(`<span class="l">Session ya trading imeshindwa: ${e.message||""}</span>`);return false}
+}
+
+/* ---------- Auto-trade ---------- */
+function haltReason(){
+  if(!$("auto").checked)return"";
+  if(!auth)return"Akaunti haijaunganishwa";
+  if(!auth.is_virtual&&!$("real").checked)return"Thibitisha akaunti halisi kwanza";
+  if(liveOpen)return"busy";
+  const stake=num("stake",0.35);
+  if(stake<0.35)return"Stake ni ndogo mno (min 0.35)";
+  if(auth.balance<stake)return"Salio halitoshi";
+  if(live.pl<=-num("lossLim",5))return"Kikomo cha hasara cha leo kimefikiwa";
+  if(live.pl>=num("tpLim",5))return"Lengo la faida la leo limefikiwa";
+  if(live.streak>=num("streakLim",30))return"Kikomo cha hasara mfululizo kimefikiwa";
+  return null;
+}
+function tryLive(s,digit){
+  const r=haltReason();
+  if(r===""||r==="busy")return;
+  if(r){log(`<span class="l">Auto-trade imezimwa: ${r}</span>`);$("auto").checked=false;return}
+  place(s,digit);
+}
+async function place(s,digit){
+  liveOpen="pending";liveMeta={s,digit};
+  const stake=num("stake",0.35);
+  try{
+    if(!await tconnect())throw new Error("Session ya trading haikuanza");
+    log(`Inanunua ${SYMS[s]} Matches ${digit}, stake ${stake.toFixed(2)} ${auth.currency}`);
+    const p=await treq({proposal:1,amount:stake,basis:"stake",contract_type:"DIGITMATCH",currency:auth.currency,duration:1,duration_unit:"t",underlying_symbol:s,barrier:String(digit)});
+    if(p.error||!p.proposal)throw new Error(p.error?p.error.message:"Proposal imeshindwa");
+    const b=await treq({buy:p.proposal.id,price:+p.proposal.ask_price});
+    if(b.error||!b.buy)throw new Error(b.error?b.error.message:"Buy imeshindwa");
+    liveOpen=b.buy.contract_id;
+    if(b.buy.balance_after!=null){auth.balance=+b.buy.balance_after;drawAcct()}
+    tw.send(JSON.stringify({proposal_open_contract:1,contract_id:liveOpen,subscribe:1}));
+  }catch(e){liveOpen=null;log(`<span class="l">Hitilafu ya trade: ${e.message}</span>`)}
+}
+function finishContract(c){
+  const profit=+c.profit,won=profit>0;
+  live.pl+=profit;live.trades++;won?(live.w++,live.streak=0):(live.l++,live.streak++);
+  saveLive();if(auth){auth.balance+=profit;drawAcct()}renderLive();
+  log(`LIVE ${SYMS[liveMeta.s]}: ${won?'<b class="w">USHINDI</b>':'<b class="l">HASARA</b>'} ${profit.toFixed(2)} | P/L leo ${live.pl.toFixed(2)}`);
+  liveOpen=null;
+  const r=haltReason();
+  if(r&&r!=="busy"){log(`<span class="l">Auto-trade imezimwa: ${r}</span>`);$("auto").checked=false}
+}
+
+/* ---------- Scanner ---------- */
+function showBig(){
+  const c=active&&S[active].cand,rot=$("mode").value==="rotate";
+  $("scanl").textContent=!running?"Imesimama":active?`Inascan sasa: ${SYMS[active]}`+(rot?` (ticks bila ishara ${idle}/${num("pat",40)})`:""):"";
+  $("bigm").textContent=active?`Utabiri wa tick ijayo (Matches) - ${SYMS[active]}`:"Utabiri wa tick ijayo";
+  const sa=active&&S[active]?S[active]:null,gaps=Array.from({length:10},(_,d)=>sa&&sa.h.length?sa.n-(sa.seen[d]||0):0);
+  const mx=Math.max(1,...gaps);
+  $("bars").innerHTML=gaps.map((v,d)=>`<div class="bar${c&&c.d===d?" hot":""}"><i style="height:${Math.round(v/mx*54)+2}px"></i><span>${d}</span><span>${v}</span></div>`).join("");
+  $("bigq").textContent=sa&&sa.h.length?"Foleni: "+gaps.map((v,d)=>[d,v]).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>`${x[0]} (${x[1]})`).join(" → "):"";
+  if(!c){$("bign").textContent="-";$("bigs").textContent=running?"Inakusanya ticks...":"Bonyeza Anza.";$("bigr").textContent="";$("bigp").classList.remove("sig");return}
+  $("bign").textContent=c.d;
+  $("bigp").classList.toggle("sig",c.sig);
+  $("bigs").innerHTML=`Weka <b>Matches ${c.d}</b>, duration tick 1. `+(c.sig?`<b class="s">Ishara imara.</b>`:`<span class="note">Bado haijafika kiwango cha ishara (${c.gap}/${num("gap",60)}).</span>`);
+  const st=stats[active],n=st?st[1]:0;
+  $("bigr").textContent=n?`Paper-trade ya soko hili: ${st[0]}/${n} (${(st[0]/n*100).toFixed(1)}%). Kuvunja sawa ni 10.5%.`:"Paper-trade ya soko hili: bado hakuna matokeo.";
+}
+function setActive(s){active=s;idle=0;showBig()}
+function applyMode(){
+  const one=$("mode").value==="one",sel=selected();
+  $("oneWrap").style.display=one?"":"none";$("patWrap").style.display=one?"none":"";$("mkWrap").style.display=one?"none":"";$("mkCount").textContent=pool().length;
+  if(!sel.includes(active))setActive(sel[0]||"");
+}
+function rotate(){
+  const p=selected();if(p.length<2||liveOpen)return;
+  const i=p.indexOf(active),order=[...p.slice(i+1),...p.slice(0,i)];
+  const nxt=order.find(k=>S[k].cand&&S[k].cand.gap>=num("gap",60))||order[0];
+  log(`Hakuna ishara kwenye ${SYMS[active]} kwa ticks ${idle}. Inahamia ${SYMS[nxt]}.`);
+  setActive(nxt);
+}
+function onDigit(s,digit){
+  const st=S[s];st.n++;
+  if(st.pending!==null){
+    const won=digit===st.pending;st.pending=null;
+    stats[s][0]+=won?1:0;stats[s][1]++;save();render();
+    log(`Paper ${SYMS[s]}: digit ${digit} ${won?'<b class="w">USHINDI</b>':'<b class="l">HASARA</b>'} (${stats[s][0]}/${stats[s][1]})`);
+  }
+  st.h.push(digit);if(st.h.length>WINDOW)st.h.shift();
+  st.seen[digit]=st.n;
+  if(st.cool>0)st.cool--;
+  if(st.h.length<WINDOW)return;
+  let cold=0,bg=-1;
+  for(let d=0;d<10;d++){const gp=st.n-(st.seen[d]||0);if(gp>bg){bg=gp;cold=d}}
+  const gap=bg,ready=gap>=num("gap",60);
+  st.cand={d:cold,gap,sig:ready&&s===active&&st.cool===0};
+  if(s===active)showBig();
+  if(s!==active||st.cool>0)return;
+  if(ready){
+    st.pending=cold;st.cool=num("cool",5);idle=0;
+    log(`<b class="s">ISHARA</b> ${SYMS[s]} Matches <b>${cold}</b> | haijatoka ticks ${gap}`);
+    try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}
+    tryLive(s,cold);
+  }else{idle++;if($("mode").value==="rotate"&&idle>=num("pat",40))rotate()}
+}
+
+/* ---------- Ticks za umma (WS) ---------- */
+function connect(){
+  let opened=false;
+  $("status").textContent="Inaunganisha...";$("status").className="";
+  const me=new WebSocket(PUB);ws=me;
+  me.onopen=()=>{
+    opened=true;
+    for(const s in S)Object.assign(S[s],{h:[],seen:{},n:0,pending:null,cool:0,cand:null});
+    selected().forEach(s=>{
+      const id=rid++;
+      pend[id]=m=>{
+        if(m.history){pipOf[s]=m.pip_size||2;m.history.prices.forEach(p=>{const d=digitOf(p,pipOf[s]),st=S[s];st.n++;st.h.push(d);st.seen[d]=st.n});
+          me.send(JSON.stringify({ticks:s,subscribe:1}))}
+        else if(m.error)log(`<span class="l">${SYMS[s]}: ${m.error.message}</span>`)};
+      me.send(JSON.stringify({ticks_history:s,count:WINDOW,end:"latest",style:"ticks",req_id:id}));
+    });
+    $("status").textContent="Imeunganishwa. Inasoma ticks...";$("status").className="on";showBig();
+  };
+  me.onmessage=e=>{
+    const m=JSON.parse(e.data);
+    if(m.req_id&&pend[m.req_id]){const f=pend[m.req_id];delete pend[m.req_id];f(m);return}
+    if(m.tick)onDigit(m.tick.symbol,digitOf(m.tick.quote,m.tick.pip_size||pipOf[m.tick.symbol]||2));
+    else if(m.error)log(`<span class="l">Hitilafu: ${m.error.message}</span>`);
+  };
+  me.onclose=ev=>{
+    if(ws!==me)return;
+    if(running){$("status").textContent=opened?"Muunganisho umekatika. Inajaribu tena...":`Haikuunganisha (code ${ev.code}). Inajaribu tena...`;$("status").className="";retry=setTimeout(connect,2000)}
+  };
+}
+function restart(){
+  applyMode();
+  if(running&&!liveOpen){ws.onclose=null;clearTimeout(retry);ws.close();connect()}
+}
+
+/* ---------- Vidhibiti ---------- */
+$("go").onclick=()=>{
+  if(running){running=false;clearTimeout(retry);if(ws){ws.onclose=null;ws.close()}$("go").textContent="Anza";$("status").textContent="Imesimama.";$("status").className="";$("auto").checked=false;showBig()}
+  else{if(!selected().length)return;running=true;$("go").textContent="Simamisha";connect()}
+};
+$("link").onclick=()=>{
+  const t=$("token").value.trim();
+  if(!t){token="";auth=null;accts=[];closeTrade();$("acct").textContent="Token imeondolewa.";$("auto").checked=false;return}
+  token=t;$("token").value="";
+  try{localStorage.setItem(KEY+"-app",$("appid").value.trim())}catch(e){}
+  connectAcct();
+};
+$("atype").onchange=()=>{$("auto").checked=false;if(accts.length)pickAcct()};
+$("auto").onchange=()=>{
+  if(!$("auto").checked)return;
+  if(!auth){$("auto").checked=false;$("acct").innerHTML='<span class="l">Unganisha akaunti kwanza.</span>';return}
+  tconnect().then(ok=>{if(ok)log("Session ya trading iko tayari.");else $("auto").checked=false});
+};
+$("reset").onclick=()=>{if(confirm("Futa matokeo yote ya paper-trade?")){for(const s in stats)stats[s]=[0,0];save();render();$("log").innerHTML=""}};
+$("mode").onchange=restart;$("one").onchange=restart;$("markets").onchange=restart;$("gap").oninput=showBig;
+try{const a=localStorage.getItem(KEY+"-app");if(a&&a!=="1089")$("appid").value=a}catch(e){}
+applyMode();render();
+</script>
+</body>
+</html>
